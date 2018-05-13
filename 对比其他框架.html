@@ -1,0 +1,95 @@
+与 React 
+
+1、相似之处：
+1）使用Virtual DOM
+
+2）提供了响应式（Reactive）和组件化（Composable）的视图组件
+
+3）将注意力集中保持在核心库，其他功能如路由和全局状态管理交给相关的库
+
+不同点：
+
+1）运行时的性能
+React 和 Vue的运行速度都是非常快的，所以速度不是做选择的决定性因素
+
+优化：
+
+React 中，当某个组件的状态发生变化时，它会以该组件为根，重新渲染整个组件子树
+
+如果要避免不必要的子组件的重渲染，需要在所有可能的地方使用 PureComponennt，或者手动实现 shoudComponentUpdate 方法
+
+同时，你可能会需要使用不可改变的数据结构来使得组件更容易被优化
+
+但是，使用 PureComponent 和 shouldComponentUpdate 时，需要保证该组件的整个子树的渲染输出都是由该组件的 props 决定的
+
+Vue中
+组件的依赖是在渲染过程中自动跟踪的，所以系统能精确知道哪个组件确实能够被重渲染
+
+即，每个组件自动获得了 shouldComponentUpdate, 并且没有上述子树问题的限制
+
+HTML&CSS
+
+React 中
+一切都是JavaScript 。不仅HTML可以用JSX来表达，CSS也可以
+
+Vue 中
+整体与 web 类似，使用template
+
+JSX vs Template
+
+在 React 中，所有的组件渲染功能都依靠 JSX。JSX 是使用 XML 语法编写的 JavaScript 的一种语法糖
+
+使用 JSX 的渲染函数有下面的优势：
+1）可以使用完整的编程语言 JavaScript 功能来构建你的视图页面
+
+2）开发工具对 JSX 的支持比较先进
+
+在 Vue 中，也提供渲染函数，支持 JSX，但是默认推荐的还是 Template
+
+任何合乎规范的 HTML 都是合法的 Vue 模板，优势如下：
+
+1）模板比 JSX 读写起来更自然
+
+2）基于 HTML 的模板使得将已有的应用逐步迁移到 Vue 更容易
+
+3）使设计师和新人开发者更容易理解和参与到项目中
+
+注意：
+更抽象来说，可以把组件分为两类：一类是偏视图表现的，一类是偏逻辑
+
+推荐使用在偏视图中使用模板（Template），
+在偏逻辑中使用 JSX 或者渲染函数
+
+组件作用域内的 css
+React 中的 css，是通过 CSS-in-JS的方案实现的
+Vue 中，通过 Style 标签写入css
+
+规模
+
+向上扩展
+
+Vue 和 React都提供了强大的路由来应对大型应用，
+React 社区在状态管理方面引入Flux, Redux
+Vue 中，采用 Vuex 更加集成Vue的状态管理解决方案
+
+差异是：
+Vue的路由库和状态管理库都是由官方维护支持且与核心库同步更新的
+
+React 则是选择把这些问题交给社区维护，更分散，但是比Vue更加繁荣
+
+Vue 提供了 Vue-cli脚手架，包含了Webpack，Browserify，甚至bo build system
+React 提供了 create-react-app
+
+向下扩展
+
+React 学习之前，需要知道 JSX 和ES2015，需要学习构建系统
+
+Vue 向下扩展，类似于 jquery，可以通过 script 的 src引入
+
+原生渲染
+
+React Native能够使你用相同的组件模型编写有本地渲染能力的APP（ios 和 Android）
+能同时跨多平台开发，对开发者是有利的
+
+Vue 和 Weex会和官方合作，Weex是阿里发起的跨平台用户界面开发框架
+
