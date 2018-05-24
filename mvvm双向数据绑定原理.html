@@ -1,0 +1,590 @@
+MVVM 双向绑定的原理：
+
+1)Object.defineProperty()
+直接在一个对象上定义一个新属性，或者修改一个对象的现有属性，并返回这个对象
+
+Object.defineProperty(obj, prop, descripter)
+
+obj: 对象
+prop: 属性
+descripter: 属性描述
+
+！！还可以把属性定义为Symbol
+
+存取描述符在数据描述符基础上增加了， get和set方法，它们对应 getters和 setter函数
+
+
+几种实现双向绑定的做法：
+1、发布者 - 订阅者模式（backbone.js)
+2、脏值检查（angular.js）
+3、数据劫持（vue.js）
+
+发布者 - 订阅者模式 ——> 通过 vm.set('property',value) 形式
+脏值检查 ——> 通过 setInterval 定时轮询检测数据变动。
+angular 只有在指定的事件触发时，进入脏值检测，步骤如下：
+
+  DOM事件，譬如用户输入文本，点击按钮等
+  XHR响应事件（$http）
+  浏览器Location变更事件（$location）
+  Timer事件（$timeout $interval）
+  执行$digest()或者$apply()
+
+数据劫持 ——> vue.js采用数据劫持加发布者 - 订阅者模式的方式，通过 Object.defineProperty()
+            劫持各个属性的setter 和 getter, 在数据变动时发布消息给订阅者，触发相应的监听回调
+
+总结：
+实现MVVM 的双向数据绑定，需要实现以下几点：
+1、实现一个数据监听器 Observer，能够对数据对象的所有属性进行监听，如有变动能拿到最新的值并通知订阅者
+2、实现一个指令解析器 Compile 对每个元素的节点指令进行解析和扫描，根据指令模板替换数据，以及绑定响应的更新函数
+3、实现一个 Watcher 作为连接 Observer 和 Compile 的桥梁，能够订阅并收到每个属性变动的通知，执行指令绑定的相应回调函数，从而更新视图
+4、MVVM入口函数，整合以上三者
+
+Observer.js
+<script>
+function Observer(data) {
+  this.data = data;
+  this.walk(data);
+}
+
+Observer.prototype = {
+  walk: function(data) {
+    var me = this;
+    Object.keys(data).forEach(function(key) {
+        me.convert(key, data[key]);
+    });
+  },
+  convert: function(key, val) {
+    this.defineReactive(this.data, key, val);
+  },
+
+  defineReactive: function(data, key, val) {
+    var dep = new Dep();
+    var childObj = observe(val);
+
+    Object.defineProperty(data, key, {
+      enumerable: true, // 可枚举
+      configurable: false, // 不能再define
+      get: function() {
+        if (Dep.target) {
+            dep.depend();
+        }
+        return val;
+      },
+      set: function(newVal) {
+        if (newVal === val) {
+            return;
+        }
+        val = newVal;
+        // 新的值是object的话，进行监听
+        childObj = observe(newVal);
+        // 通知订阅者
+        dep.notify();
+      }
+    });
+  }
+};
+
+function observe(value, vm) {
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+  return new Observer(value);
+};
+
+var uid = 0;
+
+function Dep() {
+  this.id = uid++;
+  this.subs = [];
+}
+
+Dep.prototype = {
+  addSub: function(sub) {
+    this.subs.push(sub);
+  },
+
+  depend: function() {
+    Dep.target.addDep(this);
+  },
+
+  removeSub: function(sub) {
+    var index = this.subs.indexOf(sub);
+    if (index != -1) {
+      this.subs.splice(index, 1);
+    }
+  },
+
+  notify: function() {
+    this.subs.forEach(function(sub) {
+      sub.update();
+    });
+  }
+};
+
+Dep.target = null;
+</script>
+
+Compile.js
+<script>
+  function Compile(el, vm) {
+    this.$vm = vm;
+    this.$el = this.isElementNode(el) ? el : document.querySelector(el);
+
+  if (this.$el) {
+    this.$fragment = this.node2Fragment(this.$el);
+    this.init();
+    this.$el.appendChild(this.$fragment);
+  }
+}
+
+Compile.prototype = {
+  node2Fragment: function(el) {
+      var fragment = document.createDocumentFragment(), //会使用documentFragment 劫持所有的节点
+          child;
+
+      // 将原生节点拷贝到fragment
+      while (child = el.firstChild) {
+        fragment.appendChild(child);
+      }
+      return fragment;
+  },
+
+  init: function() {
+    this.compileElement(this.$fragment);
+  },
+
+  compileElement: function(el) {
+    var childNodes = el.childNodes,
+        me = this;
+
+    [].slice.call(childNodes).forEach(function(node) {
+      var text = node.textContent;
+      var reg = /\{\{(.*)\}\}/;
+
+      if (me.isElementNode(node)) {
+        me.compile(node);
+
+      } else if (me.isTextNode(node) && reg.test(text)) {
+        me.compileText(node, RegExp.$1);
+      }
+
+      if (node.childNodes && node.childNodes.length) {
+        me.compileElement(node);
+      }
+    });
+  },
+
+  compile: function(node) {
+      var nodeAttrs = node.attributes,
+        me = this;
+
+      [].slice.call(nodeAttrs).forEach(function(attr) {
+        var attrName = attr.name;
+        if (me.isDirective(attrName)) {
+          var exp = attr.value;
+          var dir = attrName.substring(2);
+          // 事件指令
+          if (me.isEventDirective(dir)) {
+            compileUtil.eventHandler(node, me.$vm, exp, dir);
+              // 普通指令
+          } else {
+            compileUtil[dir] && compileUtil[dir](node, me.$vm, exp);
+          }
+          node.removeAttribute(attrName);
+        }
+      });
+    },
+
+    compileText: function(node, exp) {
+      compileUtil.text(node, this.$vm, exp);
+    },
+
+    isDirective: function(attr) {
+      return attr.indexOf('v-') == 0;
+    },
+
+    isEventDirective: function(dir) {
+      return dir.indexOf('on') === 0;
+    },
+
+    isElementNode: function(node) {
+      return node.nodeType == 1;
+    },
+
+    isTextNode: function(node) {
+    return node.nodeType == 3;
+    }
+};
+
+// 指令处理集合
+var compileUtil = {
+    text: function(node, vm, exp) {
+      this.bind(node, vm, exp, 'text');
+    },
+
+    html: function(node, vm, exp) {
+      this.bind(node, vm, exp, 'html');
+    },
+
+    model: function(node, vm, exp) {
+        this.bind(node, vm, exp, 'model');
+
+        var me = this,
+            val = this._getVMVal(vm, exp);
+        node.addEventListener('input', function(e) {
+            var newValue = e.target.value;
+            if (val === newValue) {
+                return;
+            }
+
+            me._setVMVal(vm, exp, newValue);
+            val = newValue;
+        });
+    },
+
+    class: function(node, vm, exp) {
+        this.bind(node, vm, exp, 'class');
+    },
+
+    bind: function(node, vm, exp, dir) {
+        var updaterFn = updater[dir + 'Updater'];
+
+        updaterFn && updaterFn(node, this._getVMVal(vm, exp));
+
+        new Watcher(vm, exp, function(value, oldValue) {
+            updaterFn && updaterFn(node, value, oldValue);
+        });
+    },
+
+    // 事件处理
+    eventHandler: function(node, vm, exp, dir) {
+        var eventType = dir.split(':')[1],
+            fn = vm.$options.methods && vm.$options.methods[exp];
+
+        if (eventType && fn) {
+            node.addEventListener(eventType, fn.bind(vm), false);
+        }
+    },
+
+    _getVMVal: function(vm, exp) {
+        var val = vm;
+        exp = exp.split('.');
+        exp.forEach(function(k) {
+            val = val[k];
+        });
+        return val;
+    },
+
+    _setVMVal: function(vm, exp, value) {
+        var val = vm;
+        exp = exp.split('.');
+        exp.forEach(function(k, i) {
+            // 非最后一个key，更新val的值
+            if (i < exp.length - 1) {
+                val = val[k];
+            } else {
+                val[k] = value;
+            }
+        });
+    }
+};
+
+
+var updater = {
+    textUpdater: function(node, value) {
+        node.textContent = typeof value == 'undefined' ? '' : value;
+    },
+
+    htmlUpdater: function(node, value) {
+        node.innerHTML = typeof value == 'undefined' ? '' : value;
+    },
+
+    classUpdater: function(node, value, oldValue) {
+        var className = node.className;
+        className = className.replace(oldValue, '').replace(/\s$/, '');
+
+        var space = className && String(value) ? ' ' : '';
+
+        node.className = className + space + value;
+    },
+
+    modelUpdater: function(node, value, oldValue) {
+        node.value = typeof value == 'undefined' ? '' : value;
+    }
+};
+</script>
+
+Watcher.js
+<script>
+  function Watcher(vm, expOrFn, cb) {
+    this.cb = cb;
+    this.vm = vm;
+    this.expOrFn = expOrFn;
+    this.depIds = {};
+
+    if (typeof expOrFn === 'function') {
+        this.getter = expOrFn;
+    } else {
+        this.getter = this.parseGetter(expOrFn);
+    }
+
+    this.value = this.get();
+}
+
+Watcher.prototype = {
+    update: function() {
+        this.run();
+    },
+    run: function() {
+        var value = this.get();
+        var oldVal = this.value;
+        if (value !== oldVal) {
+            this.value = value;
+            this.cb.call(this.vm, value, oldVal);
+        }
+    },
+    addDep: function(dep) {
+        // 1. 每次调用run()的时候会触发相应属性的getter
+        // getter里面会触发dep.depend()，继而触发这里的addDep
+        // 2. 假如相应属性的dep.id已经在当前watcher的depIds里，说明不是一个新的属性，仅仅是改变了其值而已
+        // 则不需要将当前watcher添加到该属性的dep里
+        // 3. 假如相应属性是新的属性，则将当前watcher添加到新属性的dep里
+        // 如通过 vm.child = {name: 'a'} 改变了 child.name 的值，child.name 就是个新属性
+        // 则需要将当前watcher(child.name)加入到新的 child.name 的dep里
+        // 因为此时 child.name 是个新值，之前的 setter、dep 都已经失效，如果不把 watcher 加入到新的 child.name 的dep中
+        // 通过 child.name = xxx 赋值的时候，对应的 watcher 就收不到通知，等于失效了
+        // 4. 每个子属性的watcher在添加到子属性的dep的同时，也会添加到父属性的dep
+        // 监听子属性的同时监听父属性的变更，这样，父属性改变时，子属性的watcher也能收到通知进行update
+        // 这一步是在 this.get() --> this.getVMVal() 里面完成，forEach时会从父级开始取值，间接调用了它的getter
+        // 触发了addDep(), 在整个forEach过程，当前wacher都会加入到每个父级过程属性的dep
+        // 例如：当前watcher的是'child.child.name', 那么child, child.child, child.child.name这三个属性的dep都会加入当前watcher
+        if (!this.depIds.hasOwnProperty(dep.id)) {
+            dep.addSub(this);
+            this.depIds[dep.id] = dep;
+        }
+    },
+    get: function() {
+        Dep.target = this;
+        var value = this.getter.call(this.vm, this.vm);
+        Dep.target = null;
+        return value;
+    },
+
+    parseGetter: function(exp) {
+        if (/[^\w.$]/.test(exp)) return; 
+
+        var exps = exp.split('.');
+
+        return function(obj) {
+            for (var i = 0, len = exps.length; i < len; i++) {
+                if (!obj) return;
+                obj = obj[exps[i]];
+            }
+            return obj;
+        }
+    }
+};
+</script>
+
+vue双向数据绑定原理：
+
+vue会使用documentFragment劫持所有的数据节点，包括标签元素、文本、换行、回车等
+然后vue会把data中的所有数据，用defineProperty()变成vue的访问器属性，这样每次修改这些数据的时候，会触发响应的get和set方法
+接下来，编译处理劫持到的dom 节点，遍历所有节点，根据nodeType确定节点类型
+根据节点本身的属性，判断是否需要编译 —— 是否有v-model 或者 {{}} 文本格式
+对于v-model绑定事件，当输入的时候，改变vue中的数据
+对于文本节点{{}}，将其作为一个watcher放入观察者列表，当vue数据变化的时候，会有一个主题对象，对列表中的观察者们发布改变的消息，观察者们再更新自己，改变节点中的显示
+
+访问器属性是对象的一种特殊属性，不能直接在对象中设置，而是通过 Object.defineProperty设置
+
+访问器属性的“值” 比较特殊，读取或者设置访问器属性的值，实际上是调用其内部特性get和set函数
+
+将data中的每一个属性都设置为vue对象的访问器属性，属性名和data中相同
+所以，每次修改vue.data的时候，都会调用访问器中的get和set函数
+
+小demo：
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Document</title>
+  <style>
+    body {
+      margin: 200px auto;
+      width: 800px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <input type="text" id="input" v-model="text">
+    {{ text }}
+  </div>
+  <script>
+    // vue构造函数
+    function Vue(options) {
+      this.data = options.data;
+      // 发布订阅者模式，数据绑定
+      var data = this.data;
+      observer(data, this)
+
+      var id = options.el;
+      var dom = nodeToFragment(document.getElementById(id), this)
+      // 编译完成返回到app中
+      document.getElementById('app').appendChild(dom)
+    }
+
+    // 遍历传入示例的data对象的属性，将其设置为vue对象的访问器属性
+    function observer(obj, vm) {
+      Object.keys(obj).forEach(function(key) {
+        defineReactive(vm, key, obj[key])
+      })
+    } 
+
+    // 访问器属性是对象的一种特殊属性，不能直接在对象中设置，而是通过Obejct.defineProperty设置
+    // 访问器属性的“值”比较特殊，读取或 者设置访问器属性的值，实际上是调用其内部特性get和set函数
+    function defineReactive(obj, key, val) {
+      // 这里用到了观察者模式，定义了一种 一对多的关系，让多个观察者监听一个主题对象，这个主题对象的状态发生变化时，通知所有观察者对象，观察者对象可以更新自己的状态
+      
+      // 实例化一个主题对象，对象中有空格的观察者列表
+      var dep = new Dep()
+      // 将data的每一个属性都设置为vue对象的访问器属性,属性名和data中相同
+      // 所以，每次修改vue.data的时候，都会调用下边的get和set方法，然后会监听v-model的input事件
+      // 当改变input的值，就相应的改变Vue.data的数据，然后触发这里的set方法
+      Object.defineProperty(obj, key, {
+        get: function() {
+          //Dep.target指针指向Watcher，增加订阅者watcher到主体对象Dep
+          if(Dep.target) {
+            dep.addSub(Dep.target);
+          }
+          return value;
+        },
+        set: function(newVal) {
+          if (newVal === val) {
+            return
+          }
+          val = newVal
+          //给订阅者列表中的watchers发出通知
+          dep.notify()
+        }
+      })
+    }
+
+    // 主题对象dep构造函数
+    function Dep() {
+      this.subs = [];
+    }
+
+    // Dep有两个方法，增加观察者和发布者消息
+    Dep.prototype = {
+      addSub: function (sub) {
+        this.subs.push(sub);
+      },
+      notify: function () {
+        this.subs.forEach(function(sub) {
+          sub.update()
+        })
+      }
+    }
+
+    // DocumentFragment可以看做节点容器，可以包含多个子节点，当将其插入到DOM中时，只有他的子节点会插入目标节点，所以把它看做一组目标容器
+    // 使用DocumentFragment处理节点，速度和性能远远优于直接操作DOM
+    // Vue进行编译时，就是将挂载目标的所有子节点劫持到DocumentFragment中，经过一番处理后，再讲DocumentFragment整体返回到插入挂载目标中
+
+    funciton nodeToFragment(node, vm) {
+      var flag = document.createDocumentFragment();
+      var child;
+      // 劫持node的所有子节点（真的在DOM树中消失）
+      while(child = node.firstChild) {
+        // 先编译所有的子节点，再劫持到文档片段中
+        compile(child, vm);
+        flag.appendChild(child)
+      }
+      return flag;
+    }
+
+    // 编译节点，初始化数据绑定
+    function compile(node, vm) {
+      // 该正则匹配的是{{任意内容}}
+      var reg = /\{\{(.*)\}\}/;
+      // 节点类型为元素
+      if(node.nodeType === 1) {
+        var attr = node.attributes;
+        // 解析属性，不同的属性用不同的处理方式，这里只写了v-model属性
+        for(var i = 0; i < attr.length; i++) {
+          if (attr[i].nodeName == 'v-model') {
+            // 获取节点中的v-model属性的值，也就是绑定的属性名
+            var name = attr[i].nodeValue;
+
+            node.addEventListener('input', function(e) {
+              // 当触发input事件时改变vue.data中相应属性的值，进而触发该属性的set方法
+              vm[name] = e.target.value
+            })
+            // 改变之后，通过属性名取得数据
+            node.value = vm.data[name];
+            // 用完删，所以浏览器中编译之后的节点上没有v-model属性
+            node.removeAttribute('v-model');
+          }
+        }
+      }
+      // 节点类型为text
+      if (node.nodeType === 3) {
+        // text是否满足文本插值的写法：{{任意内容}}
+        if (reg.test(node.nodeValue)) {
+          // 获取匹配到的字符串：这里的RegExp.$1是RegExp的一个属性
+          // 该属性表示正则表达式reg中，第一个（）里边的内容，也就是{{任意内容}}中的 文本【任意内容】
+          var name = RegExp.$1;
+          // 去掉前后空格，并将处理后的数据写入节点
+          name = name.trim();
+          // node.nodeValue = vm.data[name]
+          // 实例化一个新的订阅者watcher
+          new Watcher(vm, node, name)
+          return 
+        }
+      }
+    }
+
+    // 观察者构造函数
+    // 上边实例化新的观察者的时候，执行这个函数：通过get()取得Vue.data中对应的数据，然后通过update()方法把数据更新到节点中
+    function Watcher(vm, node, name) {
+      // 让全局变量Dep的target属性的指针指向该watcher实例
+      Dep.target = this;
+      this.vm = vm;
+      this.node = node;
+      this.name = name;
+      this.update();
+      Dep.target = null;
+    }
+
+    // 观察者使用update方法，实际上是：
+    Watcher.prototype = {
+      update: function() {
+        this.get();
+        this.node.nodeValue = this.value;
+      },
+      // 获取data中的属性值
+      get: function () {
+        this.value = this.vm[this.name] //触发相应属性的get
+      }
+    }
+
+    var vm = new Vue({
+      el: '#app',
+      data: {
+        text: 'Hello world'
+      }
+    })
+  </script>
+</body>
+</html>
+
+双向数据绑定：
+首先，实例化Vue对象
+
+通过Object.defineProperty()为Vue对象中的所有属性都添加上get/set的监控
+
+当属性值改变时，触发set方法，发布更改的消息
+
+收到发布消息后，进行数据更改

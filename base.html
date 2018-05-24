@@ -13,3 +13,184 @@ vue 中 key 管理可复用的元素
   <!-- 内容 -->
 </div>
 
+
+1、基本的语法
+
+1）声明式渲染 (双向绑定)
+Vue.js的核心是一个允许采用简洁的模板语法来 声明式的 将数据渲染进  DOM系统
+
+<div id="id">
+  {{ message }} //模板语法
+</div>
+
+var app = new Vue({
+  el: '#app', //声明式
+  data: { //把数据渲染进DOM结构
+    message: 'hello vue!'
+  }
+})
+
+
+vue是一套构建用户 “界面” 的渐进式框架
+
+1）渐进式 —— 自有（React 主要是函数式编程的理念，需要知道什么是副作用，什么是纯函数，如何隔离副作用）
+
+而 vue 比较自有，想把页面分的更加具体，分成更小可控的单元，可以使用组件系统，其他可以不用
+
+2）自底向上的开发模式 —— 由简到繁的一个过程
+
+声明式渲染和命令式渲染
+
+声明式渲染：只需要告诉程序我们想要什么效果，其他交给程序来做
+
+命令式渲染：命令程序去做什么，程序会跟着你的命令一步一步去执行
+
+demo 
+
+<script>
+  //命令式渲染
+  //关心每一步，关心流程，用命令去实现
+  var newArr = [];
+  var arr = [1, 2, 3, 4, 5];
+  for (var i  = 0; i < arr.length; i++) {
+    newArr.push(arr[i]*2);
+  }
+  console.log(newArr);
+
+  //声明式渲染,不关心中间流程，只需要关心结果和实现的条件
+  var arr1 = arr.map(function(item) {
+    return item*2;
+  })
+  console.log(arr1);
+</script>
+
+vue 的声明周期 （8个）
+beforeCreate 
+created
+
+beforeMount
+mounted
+
+beforeUpdate
+updated
+
+beforeDestroy
+destroyed
+
+更好的说明 vue 的声明周期：
+
+new Vue() 
+          —— beforeCreate
+Observe Data
+开始监控Data对象数据变化
+
+Init Events
+vue内部初始化事件
+          —— created(created事件钩子开始执行)
+有 el 吗？ 有模板template吗
+
+有，编译模板，把data里面的数据和模板生成HTML
+
+        —— beforeMount
+        开始执行beforeMOunt挂在钩子，注意此时还没有生成HTML到页面上去
+
+Create vm.$el and replace 'el' with it 
+用上面编译好的HTML内容替换rl属性执行的dom对象或者选择对应的HTML标签里面的内容
+
+        —— mounted
+        挂载完成，也就是模板中的html渲染到了html页面中，此时一般可以做一些ajax操作
+        mounted 只会执行一次
+
+当数据改变时，mounted实时监控数据变化。
+更新之前的事件钩子是 —— beforeUpdate
+
+Virtual DOM (re-render and patch)
+
+更新之后的事件钩子是 —— updated
+
+          —— beforeDestroy 
+          vue 实例销毁前执行的钩子
+
+Teardown
+watchers, child components and event listeners
+
+           —— destroyed
+           vue实例销毁
+
+
+具体过程参照此图片：https://sfault-image.b0.upaiyun.com/239/943/2399431513-59cb0ac1e91b1
+
+
+具体的vue操作：
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Document</title>
+</head>
+<body>
+  <div id="app"></div>  <!-- 所有的模板都写在里面 -->
+  <script src="../../vue.js"></script>
+  <script>
+    var app = new Vue({
+      el: '#app', //这里是指定要操作哪个标签，进行绑定
+      data: {
+        // 写入数据，data为数据模块
+      },
+      computed: {
+        // computed 存放计算属性
+      },
+      methods: {
+        //存放业务逻辑，例如函数等
+      },
+      watch: {
+        //进行箭筒
+      }
+    })
+  </script>
+</body>
+</html>
+
+vue命令简介：
+
+绑定事件：
+v-on:事件 = “事件名称” / @事件 = “事件名称”
+
+<div v-on:click="change"></div>
+<div @click="change"></div>
+
+动态绑定属性：
+v-bind:自定义属性 = “属性名称” / ：自定义属性 = “属性名称”
+
+<div v-bind:title="hello"></div>
+<div :title="hello"></div> //这里绑定了一个叫hello的属性
+
+条件判断：
+v-if = "判断条件" 
+
+<div v-if="name===value"></div> //判断name是否等于value
+
+遍历数组：
+v-for="(参数1，参数2) in 数组"
+
+<div id="app">
+  <ul>
+    <li v-for="(text, index) in list"> //第一个参数是内容，第二个参数是序号
+      {{ index }} - {{ text }}
+    </li> 
+  </ul>
+</div>
+
+<script src="./vue.js"></script>
+<script>
+  var vm = new Vue({
+    el: '#app',
+    data: {
+      list:['a','b','c']
+    }
+  })
+</script>
+
+
